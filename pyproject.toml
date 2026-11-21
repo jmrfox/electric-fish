@@ -1,0 +1,39 @@
+[project]
+name = "electric-fish"
+version = "0.1.0"
+description = "Modeling behavior and electric organ discharges (EODs) of weakly electric fish (Mormyridae)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.5",
+    "opencv-python-headless>=5.1.0.95",
+    "pandas>=3.1.1",
+    "pyarrow>=26.0.1",
+    "scipy>=1.18.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.14,<0.9"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "NPY"]
+
+[tool.ruff.lint.per-file-ignores]
+# REPL cells end in a bare expression to display it
+"notebooks/*" = ["B018"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+    "marimo>=0.25.2",
+    "pytest>=9.2.0",
+    "ruff>=0.17.6",
+]
