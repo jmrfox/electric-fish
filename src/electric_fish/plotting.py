@@ -237,3 +237,141 @@ def plot_waveform_overlay(rec: Recording, n: int = 400, seed: int = 0) -> plt.Fi
     axes[0, 0].legend(loc="lower right")
     fig.suptitle("EOD waveform shape, strongest electrode", x=0.01, ha="left", fontweight="bold")
     return fig
+
+
+# --------------------------------------------------------------------------- tracking QC
+
+EVENT_STYLE = {  # kind -> (color slot, marker); kinds are their own entities in QC charts
+    "swap": (CATEGORICAL[7], "x"),
+    "jump": (CATEGORICAL[6], "^"),
+    "length": (CATEGORICAL[3], "o"),
+}
+
+
+def draw_poses(ax, rec: Recording, frame: int, labels: bool = True) -> None:
+    """Overlay every fish's skeleton for one CSV frame on an existing image axis."""
+    from electric_fish.tracking import BODY_ORDER
+
+    colors = fish_colors(rec.fish)
+    row = rec.poses.loc[frame]
+    for fish, color in colors.items():
+        kps = [k for k in BODY_ORDER if k in rec.keypoints]
+        x = np.array([row[(fish, k, "x")] for k in kps], float)
+        y = np.array([row[(fish, k, "y")] for k in kps], float)
+        ax.plot(x, y, color=SURFACE, lw=3.5, solid_capstyle="round")  # surface ring
+        ax.plot(x, y, color=color, lw=2, solid_capstyle="round")
+        ax.scatter(x, y, s=18, color=color, edgecolor=SURFACE, linewidth=1, zorder=3)
+        head = kps.index("head")
+        if labels and np.isfinite(x[head]):
+            ax.annotate(
+                f"fish {fish}",
+                (x[head], y[head]),
+                xytext=(6, -6),
+                textcoords="offset points",
+                color=INK,
+                fontsize=8,
+                bbox=dict(boxstyle="round,pad=0.2", fc=SURFACE, ec=color, lw=1),
+            )
+
+
+def plot_tracking_frames(
+    rec: Recording,
+    video,
+    frames: list[int],
+    frame_offset: int = 0,
+    center: tuple[float, float] | None = None,
+    size: int = 400,
+) -> plt.Figure:
+    """Video frames with tracked poses overlaid, side by side.
+
+    ``frame_offset`` maps CSV frame k to video index k + offset (the alignment is unverified:
+    compare 0 and -1). ``center``/``size`` crop all panels to the same square.
+    """
+    fig, axes = plt.subplots(1, len(frames), figsize=(3.6 * len(frames), 3.9), squeeze=False)
+    h, w = video.shape
+    for ax, frame in zip(axes[0], frames, strict=True):
+        ax.imshow(video[frame + frame_offset], cmap="gray")
+        if frame in rec.poses.index:
+            draw_poses(ax, rec, frame)
+        else:
+            ax.text(0.5, 0.02, "no tracking for this frame", transform=ax.transAxes,
+                    ha="center", color=INK, bbox=dict(fc=SURFACE, ec=AXIS))  # fmt: skip
+        if center is not None:
+            cx, cy = center
+            ax.set_xlim(max(cx - size / 2, 0), min(cx + size / 2, w))
+            ax.set_ylim(min(cy + size / 2, h), max(cy - size / 2, 0))
+        ax.set_title(f"frame {frame}", fontsize=9)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.grid(False)
+    return fig
+
+
+def plot_event_timeline(rec: Recording, events: pd.DataFrame) -> plt.Figure:
+    """Raster of flagged tracking events over time, one row per fish."""
+    fig, ax = plt.subplots(figsize=(11, 0.5 * len(rec.fish) + 1.4))
+    y_of = {f: i for i, f in enumerate(rec.fish)}
+    kinds = [k for k in EVENT_STYLE if k in set(events["kind"])]
+    for i, kind in enumerate(kinds):
+        color, marker = EVENT_STYLE[kind]
+        ev = events[events["kind"] == kind]
+        # offset kinds vertically within each fish row so they don't overplot
+        y = ev["fish"].map(y_of) + (i - (len(kinds) - 1) / 2) * 0.22
+        ax.scatter(ev["time_s"], y, marker=marker, s=22, color=color, linewidth=1.2,
+                   label=f"{kind} ({len(ev):,})")  # fmt: skip
+    ax.set_yticks(range(len(rec.fish)), [f"fish {f}" for f in rec.fish])
+    ax.set_ylim(len(rec.fish) - 0.5, -0.5)
+    ax.set_xlabel("time (s)")
+    ax.set_title("Flagged tracking events")
+    if kinds:
+        ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
+    return fig
+
+
+def plot_speed_histogram(rec: Recording, max_speed: float = 100.0) -> plt.Figure:
+    """Per-fish distribution of frame-to-frame displacement (consecutive frames only)."""
+    from electric_fish.tracking import pose_array, transition_costs
+
+    xy, _, fish, _ = pose_array(rec)
+    gap = np.diff(rec.poses.index.to_numpy())
+    speed = np.diagonal(transition_costs(xy), axis1=1, axis2=2)[gap == 1]
+    top = max(np.nanmax(speed), max_speed * 1.1)
+    bins = np.linspace(0, top, 120)
+    fig, ax = plt.subplots(figsize=(6, 3))
+    for a, (f, color) in enumerate(fish_colors(fish).items()):
+        ax.hist(speed[:, a], bins=bins, histtype="step", lw=1.5, color=color, label=f"fish {f}")
+    ax.axvline(max_speed, color=INK_MUTED, lw=1, ls="--")
+    ax.annotate(
+        "jump threshold",
+        (max_speed, 1),
+        xycoords=("data", "axes fraction"),
+        xytext=(4, -4),
+        textcoords="offset points",
+        va="top",
+        color=INK_SECONDARY,
+    )
+    ax.set_yscale("log")
+    ax.set_xlabel("mean keypoint displacement (px/frame)")
+    ax.set_ylabel("frames")
+    ax.set_title("Frame-to-frame movement")
+    ax.legend()
+    return fig
+
+
+def plot_body_length(rec: Recording, bin_s: float = 10.0) -> plt.Figure:
+    """Median body length per fish over time; label swaps between fish of different size
+    show up as lines crossing."""
+    from electric_fish.tracking import body_length, pose_array
+
+    xy, _, fish, kps = pose_array(rec)
+    length = pd.DataFrame(body_length(xy, kps), columns=fish, index=rec.poses.index)
+    t = rec.eods.groupby("frame")["time_s"].first().reindex(length.index)
+    binned = length.groupby((t // bin_s) * bin_s).median()
+    fig, ax = plt.subplots(figsize=(11, 3))
+    for f, color in fish_colors(fish).items():
+        ax.plot(binned.index, binned[f], color=color, lw=1.5, label=f"fish {f}")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("body length (px)")
+    ax.set_title(f"Body length, head–middle–tail (median per {bin_s:g} s)")
+    ax.legend(loc="upper left", ncols=len(fish))
+    return fig

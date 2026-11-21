@@ -16,8 +16,20 @@ Notebooks in `notebooks/` are [marimo](https://marimo.io) notebooks: reactive, s
 
 ```bash
 uv run marimo edit notebooks/voltage_viewer.py   # edit in the browser
+uv run marimo edit notebooks/tracking_qc.py      # tracking quality: swaps, jumps, video overlay
 uv run marimo run notebooks/voltage_viewer.py    # use as a read-only app
 ```
+
+For scrubbing video side by side with poses and EOD voltage, there is a GPU-rendered
+[fastplotlib](https://www.fastplotlib.org) viewer in its own optional dependency group:
+
+```bash
+uv run --group viz python scripts/video_viewer.py 2024-02-13T14_33_21
+```
+
+It opens a native window (WSLg on WSL2). On WSL2 wgpu currently only finds the CPU renderer
+(llvmpipe), which still manages ~25 frames/s. fastplotlib's notebook support is JupyterLab
+only, so it is not embedded in the marimo notebooks.
 
 For quick non-interactive exploration, plain `.py` files with `# %%` cells also run in
 [Zed's REPL](https://zed.dev/docs/repl) (`repl: run`), using the project `.venv` as the kernel.
@@ -51,7 +63,7 @@ with rec.open_video() as video:
 | `time_s` | EOD time (sub-frame) | frame time (`RelativeTime`) |
 | extra | — | `discharging_fish`, `similarity_*`, fish lengths, pairwise distances |
 
-Open questions: whether CSV `Frame` k is video index k or k-1 is not yet verified; in the
+CSV `Frame` k is video index k (verified with `tracking.frame_alignment`). In the
 assigned export 84 frames carry two different poses across their EOD rows (`rec.poses` keeps
 the first, `rec.n_pose_conflicts` counts them).
 
@@ -59,6 +71,7 @@ the first, `rec.n_pose_conflicts` counts them).
 
 ```
 src/electric_fish/   recording.py (CSV → Recording), video.py (VideoReader), dataset.py (discovery, cache)
+                     eod.py (waveform measures), tracking.py (pose QC), plotting.py
 scripts/             one-off / batch scripts
 notebooks/           marimo notebooks (interactive exploration)
 tests/

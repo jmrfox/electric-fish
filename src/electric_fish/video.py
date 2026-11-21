@@ -13,8 +13,8 @@ class VideoReader:
     """Thin wrapper over ``cv2.VideoCapture`` with indexing and iteration.
 
     Frames are returned as RGB ``uint8`` arrays (or 2-D grayscale with ``gray=True``).
-    Indices are 0-based video frame indices. Note: the CSV ``frame`` column starts at 1;
-    whether CSV frame ``k`` is video index ``k`` or ``k - 1`` has not been verified yet.
+    Indices are 0-based video frame indices. CSV frame ``k`` is video index ``k`` (checked on
+    all four sessions with :func:`electric_fish.tracking.frame_alignment`).
 
     >>> with VideoReader("data/video2024-02-20T12_56_22.avi") as v:
     ...     img = v[100]

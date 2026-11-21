@@ -181,9 +181,7 @@ def _(mo):
 
 @app.cell
 def _(mo):
-    bin_s = mo.ui.slider(
-        start=1, stop=60, value=5, label="Time bin (s)", show_value=True
-    )
+    bin_s = mo.ui.slider(start=1, stop=60, value=5, label="Time bin (s)", show_value=True)
     bin_s
     return (bin_s,)
 
